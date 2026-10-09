@@ -1,0 +1,230 @@
+==================== entidade.h ====================
+#ifndef ENTIDADE_H
+#define ENTIDADE_H
+
+#include <stdbool.h>
+#include "raylib.h"
+
+typedef enum {
+    ENTIDADE_JOGADOR,
+    ENTIDADE_INIMIGO,
+    ENTIDADE_ITEM
+} TipoEntidade;
+
+typedef union {
+    int dano;
+    int valor;
+} ExtraEntidade;
+
+typedef struct {
+    TipoEntidade tipo;
+    Vector2 pos;
+    float raio;
+    int vida;
+    Color cor;
+    ExtraEntidade extra;
+} Entidade;
+
+Entidade *entidadeCriar(TipoEntidade tipo, Vector2 pos);
+bool entidadeColidiu(Entidade *a, Entidade *b);
+void entidadeDesenhar(Entidade *e);
+void entidadeAplicarDano(Entidade *e, int dano);
+bool entidadeEstaViva(Entidade *e);
+
+#endif
+
+
+==================== entidade.c ====================
+#include <stdlib.h>
+#include "entidade.h"
+
+Entidade *entidadeCriar(TipoEntidade tipo, Vector2 pos) {
+    Entidade *e = (Entidade *)malloc(sizeof(Entidade));
+    if (e == NULL) return NULL;
+
+    e->tipo = tipo;
+    e->pos = pos;
+
+    switch (tipo) {
+        case ENTIDADE_JOGADOR:
+            e->raio = 20;
+            e->vida = 100;
+            e->cor = BLUE;
+            e->extra.valor = 0;
+            break;
+        case ENTIDADE_INIMIGO:
+            e->raio = 15;
+            e->vida = 50;
+            e->cor = RED;
+            e->extra.dano = 10;
+            break;
+        case ENTIDADE_ITEM:
+            e->raio = 10;
+            e->vida = 1;
+            e->cor = GREEN;
+            e->extra.valor = 5;
+            break;
+    }
+    return e;
+}
+
+bool entidadeColidiu(Entidade *a, Entidade *b) {
+    if (a == NULL || b == NULL) return false;
+    return CheckCollisionCircles(a->pos, a->raio, b->pos, b->raio);
+}
+
+void entidadeDesenhar(Entidade *e) {
+    if (e == NULL) return;
+    DrawCircleV(e->pos, e->raio, e->cor);
+}
+
+void entidadeAplicarDano(Entidade *e, int dano) {
+    if (e == NULL) return;
+    e->vida -= dano;
+    if (e->vida < 0) e->vida = 0;
+}
+
+bool entidadeEstaViva(Entidade *e) {
+    if (e == NULL) return false;
+    return e->vida > 0;
+}
+
+
+==================== atividade8.c ====================
+#include <stdio.h>
+#include <stdlib.h>
+#include "raylib.h"
+#include "entidade.h"
+
+#define LARGURA 800
+#define ALTURA 600
+#define MAX_ENTIDADES 64
+
+Entidade *vetorEntidades[MAX_ENTIDADES];
+int totalEntidades = 0;
+
+bool adicionarEntidade(Entidade *e) {
+    if (e == NULL || totalEntidades >= MAX_ENTIDADES) return false;
+    vetorEntidades[totalEntidades++] = e;
+    return true;
+}
+
+void removerEntidade(int indice) {
+    if (indice < 0 || indice >= totalEntidades) return;
+    free(vetorEntidades[indice]);
+    for (int i = indice; i < totalEntidades - 1; i++) {
+        vetorEntidades[i] = vetorEntidades[i + 1];
+    }
+    totalEntidades--;
+}
+
+Vector2 posicaoAleatoria(void) {
+    Vector2 p;
+    p.x = (float)GetRandomValue(40, LARGURA - 40);
+    p.y = (float)GetRandomValue(40, ALTURA - 40);
+    return p;
+}
+
+int main(void) {
+    InitWindow(LARGURA, ALTURA, "Atividade 8");
+    SetTargetFPS(60);
+
+    Vector2 posInicial = { LARGURA / 2.0f, ALTURA / 2.0f };
+    Entidade *jogador = entidadeCriar(ENTIDADE_JOGADOR, posInicial);
+    adicionarEntidade(jogador);
+
+    for (int i = 0; i < 5; i++) adicionarEntidade(entidadeCriar(ENTIDADE_INIMIGO, posicaoAleatoria()));
+    for (int i = 0; i < 5; i++) adicionarEntidade(entidadeCriar(ENTIDADE_ITEM, posicaoAleatoria()));
+
+    int pontos = 0;
+
+    while (!WindowShouldClose()) {
+        if (entidadeEstaViva(jogador)) {
+            float vel = 4.0f;
+            if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) jogador->pos.x += vel;
+            if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A)) jogador->pos.x -= vel;
+            if (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S)) jogador->pos.y += vel;
+            if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W)) jogador->pos.y -= vel;
+
+            for (int i = totalEntidades - 1; i >= 1; i--) {
+                Entidade *e = vetorEntidades[i];
+                if (!entidadeColidiu(jogador, e)) continue;
+
+                if (e->tipo == ENTIDADE_INIMIGO) {
+                    entidadeAplicarDano(jogador, e->extra.dano);
+                    entidadeAplicarDano(e, e->vida);
+                } else if (e->tipo == ENTIDADE_ITEM) {
+                    pontos += e->extra.valor;
+                    entidadeAplicarDano(e, e->vida);
+                }
+
+                if (!entidadeEstaViva(e)) {
+                    removerEntidade(i);
+                }
+            }
+        }
+
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+
+        for (int i = 0; i < totalEntidades; i++) {
+            entidadeDesenhar(vetorEntidades[i]);
+        }
+
+        DrawText(TextFormat("Vida: %d", jogador->vida), 10, 10, 20, BLACK);
+        DrawText(TextFormat("Pontos: %d", pontos), 10, 35, 20, BLACK);
+
+        if (!entidadeEstaViva(jogador)) {
+            DrawText("GAME OVER", LARGURA / 2 - 100, ALTURA / 2 - 20, 40, RED);
+        }
+
+        EndDrawing();
+    }
+
+    while (totalEntidades > 0) removerEntidade(totalEntidades - 1);
+
+    CloseWindow();
+    return 0;
+}
+
+
+==================== atividade8b.c ====================
+#include <stdlib.h>
+#include "raylib.h"
+#include "entidade.h"
+
+int main(void) {
+    InitWindow(800, 600, "Atividade 8b");
+    SetTargetFPS(60);
+
+    Vector2 p1 = { 200, 300 };
+    Vector2 p2 = { 400, 300 };
+    Vector2 p3 = { 600, 300 };
+
+    Entidade *jogador = entidadeCriar(ENTIDADE_JOGADOR, p1);
+    Entidade *inimigo = entidadeCriar(ENTIDADE_INIMIGO, p2);
+    Entidade *item = entidadeCriar(ENTIDADE_ITEM, p3);
+
+    while (!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+
+        entidadeDesenhar(jogador);
+        entidadeDesenhar(inimigo);
+        entidadeDesenhar(item);
+
+        EndDrawing();
+    }
+
+    free(jogador);
+    free(inimigo);
+    free(item);
+
+    CloseWindow();
+    return 0;
+}
+
+
+==================== compilar ====================
+gcc atividade8.c entidade.c -o atividade8 -lraylib -lm -lpthread -ldl -lrt -lX11
+gcc atividade8b.c entidade.c -o atividade8b -lraylib -lm -lpthread -ldl -lrt -lX11
